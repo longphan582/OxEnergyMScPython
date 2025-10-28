@@ -23,12 +23,13 @@ It is often used at the start of files to describe the file.
 
 # Import any necessary libraries 
 import math
+import matplotlib.pyplot as plt
 
 # Initialize battery parameters and variables
 dt = 1  # Time step in hours
-max_soc = 14  # Maximum state of charge (kWh)
-min_soc = 0.5   # Minimum state of charge (kWh)
-max_power = 11.0 # Maximum power the battery can handle (kW)
+max_soc = 10  # Maximum state of charge (kWh)
+min_soc = 1   # Minimum state of charge (kWh)
+max_power = 15.0 # Maximum power the battery can handle (kW)
 efficiency = 0.98    # Base battery efficiency
 dt_degradation = 0.01    # Battery degradation factor
 soc_0 = 5  # Initial state of charge (kWh)
@@ -38,47 +39,59 @@ soc_0 = 5  # Initial state of charge (kWh)
 # Negative values indicate excess energy that can be used to charge the battery
 demand_P = [5, -8, 12, -3, 7, -10, 15, -5, 8, -2]
 
-
 # Initialize lists to store battery power, state of charge and the new net demand after battery operation
 bat_P = [0] * len(demand_P)  # List to store battery power for each period, initialized to 0
-soc_E =   # <--- List to store state of charge, starting at 50 kWh
-net_demand_P =  # <--- List to store net demand after battery operation
+soc_E = [0] * len(demand_P) # <--- List to store state of charge, starting at 5 kWh
+net_demand_P = [0] * len(demand_P) # <--- List to store net demand after battery operation
+deg = [0] * len(demand_P)
 
-# write code with the general structure:
-# for loop condition:
-#    if demand is positive:
-#        discharge battery
-#    else if demand is negative:
-#        charge battery
-#    else:
-#        do nothing
-
-# iterate through each time period using the range() function
-for : # <--- Fill in the for loop to iterate over the range of demand_P length
-    
+for i in range(len(demand_P)):
     # Conditional logic - check if demand is positive, negative or 0
-    if demand_P[i] 0: # <--- Complete the condition to check if demand is positive
+    if demand_P[i] > 0:
+
         # Case (a): Positive demand means discharge the battery
         # Calculate battery power (discharge = negative internal battery power)
-        bat_P[i] = -1 * demand_P[i]
+        discharge_P = min(demand_P[i], max_power)
+        avai_SOC = soc_E[i-1]*(1-dt_degradation) if i > 0 else soc_0 # Check if enough energy is available
+        possible_discharge = min(discharge_P * dt, (avai_SOC - min_soc))/efficiency
         
-    el # <--- complete the else if condition to check if demand is negative:
+        bat_P[i] = -possible_discharge / dt  # discharge (negative power)
+        
+    elif demand_P[i] < 0:
         # Case (b): Negative demand means charge the battery  
         # Calculate battery power (charging = positive internal power)
-        bat_P[i] = 
+        charge_P = min(abs(demand_P[i]), max_power)
+        avai_SOC = soc_E[i-1]*(1-dt_degradation) if i > 0 else soc_0 # Check if enough energy is available
+        possible_charge = min(charge_P * dt, (max_soc - avai_SOC))*efficiency
+        
+        bat_P[i] = possible_charge / dt  # charge (positive power)
 
     else:
         # Case (c): Zero demand means no battery operation
         bat_P[i] = 0  # No power change
 
-    # Update state of charge (SoC) based on battery power and time step
+# Update state of charge (SoC) based on battery power and time step
     if i == 0:
-        soc_E[0] = soc_0  # Maintain initial SoC
+        soc_E[i] = soc_0*(1-dt_degradation) + bat_P[i] * dt
     else:
-        soc_E[i]  # Update SoC based on previous timestep's SoC and battery power, remember you need to convert power to energy
+        soc_E[i] = soc_E[i-1]*(1-dt_degradation) + bat_P[i] * dt
+
+    # Keep SoC within limits
+    soc_E[i] = round(max(min_soc, min(max_soc, soc_E[i])),2)
 
     # update the net demand after battery operation
-    net_demand_P[i] =
+    net_demand_P[i] = round(demand_P[i] + bat_P[i],2)
 
 # Print the final state of charge
-print() # <--- Add a print statement to display the final state of charge. 
+print("Final State of Charge (kWh):", round(soc_E[-1],2))
+print("State of Charge history:", soc_E)
+print("Net Demand after battery operation:", net_demand_P) 
+
+# Example data
+x = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+# Plot line graph
+plt.plot(x, soc_E, color = 'blue')
+plt.plot(x, net_demand_P, color = 'orange')
+
+plt.legend()
+plt.show()

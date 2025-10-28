@@ -30,38 +30,52 @@ def calc_pv_array_size(building_width, building_length,
                        roof_angle, pv_width, pv_height,
                        pv_power):
     """
-    This is a docstring. Use it to explain to the user what a function does.
-    It will automatically be read by 'help' functions such as in spyder.
-    
-    Function to calculate the size of a PV array that can fit on a building
-    with shed style roof.
+    Calculate the total PV capacity that can be installed on a building's roof (with no overhang).
 
     Parameters
     ----------
     building_width : float
-        Width of building in metres.
+        The width of the building in metres.
     building_length : float
-        Length of building in metres.
+        The length of the building in metres.
     roof_angle : float
-        Angle of the roof from horizontal in degrees.
+        The angle of the roof in degrees.
     pv_width : float
-        Width of single PV panel in mm.
+        The width of a single PV panel in mm.
     pv_height : float
-        Width of single PV panel in mm.
+        The height of a single PV panel in mm.
     pv_power : float
-        Power of single PV panel in W.
+        The power rating of a single PV panel in Watts.
 
     Returns
     -------
-    total_power : float
-        Total power of PV array in kW.
-    total_panels : float
-        Maximum number of PV panels that fit on the roof.
+    total_capacity_kw : float
+        The total PV capacity that can be installed on the roof in kW.
+    num_panels : int
+        The number of PV panels that can fit on the roof.
     """
+    # orientation 1: panel width along building length
 
-    # <--- add your code to calculate PV array size from the previous exercise.
+    n_panels_length1 = building_length // (pv_width / 1000)
+    n_panels_height1 = ((building_width/2) / math.cos(math.radians(roof_angle))) // (pv_height / 1000)
 
-    return total_power_kw, total_panels
+    num_panels1 = n_panels_length1 * n_panels_height1
+
+    # orientation 2: panel height along building length
+
+    n_panels_length2 = building_length // (pv_height / 1000)
+    n_panels_height2 = ((building_width/2) / math.cos(math.radians(roof_angle))) // (pv_width / 1000)
+
+    num_panels2 = n_panels_length2 * n_panels_height2
+
+    # determine the maximum number of panels from both orientations
+    max_panels = max(num_panels1, num_panels2)
+
+    # calculate the total PV capacity in kW
+    total_capacity_kw = max_panels * pv_power / 1000
+
+
+    return total_capacity_kw, max_panels # <--- return the total PV capacity in kW and number of panels
 
 # =============================================================================
 # Example PV class
@@ -102,7 +116,7 @@ class PV():
             Power output profile of the PV asset in kW.
         """
         self.pv_output_p = self.capacity_factor * self.peak_power_kw
-        return pv_output_p
+        return self.pv_output_p
 
 # =============================================================================
 # Basic conditional battery class
@@ -125,7 +139,7 @@ class Storage():
         Maximum power the battery can handle (kW). The default is 15.0 kW.
     efficiency : float, optional
         Base battery efficiency. The default is 0.98.
-    dt_degradation : float, optional
+    self_discharge : float, optional
         Battery degradation factor. The default is 0.01.
     soc_0 : float, optional
         Initial state of charge (kWh). The default is 5.0 kWh.
@@ -134,7 +148,7 @@ class Storage():
     """
 
     def __init__(self, id, T, dt, max_soc=14.0, min_soc=0.5, max_power=11.0,
-                  efficiency=0.98, dt_degradation=0.01, soc_0=5.0,
+                  efficiency=0.99, self_discharge=0.01, soc_0=5.0,
                     model="Tesla Powerwall"):
         self.id = id
         self.T = T # Total number of time periods
@@ -143,7 +157,7 @@ class Storage():
         self.min_soc = min_soc   # Minimum state of charge (kWh)
         self.max_power = max_power # Maximum power the battery can handle (kW)
         self.efficiency = efficiency    # Base battery efficiency
-        self.dt_degradation = dt_degradation    # Battery degradation factor
+        self.self_discharge = self_discharge    # Battery degradation factor
         self.soc_0 = soc_0  # Initial state of charge (kWh)
         self.model = model  # Battery model name
 
@@ -171,21 +185,47 @@ class Storage():
         """
         # add you conditional battery model from above, adjusting to include
         # the self keyword.
-        if demand_P > 0:  
-            # <--- add your code to discharge the battery (remember the first period, t=0, is dealt with separately)
-        elif demand_P < 0:  
-            # <--- add your code to charge the battery (remember the first period, t=0, is dealt with separately)
-        else:
-            self.storage_power[t] = 0
+        if demand_P > 0: # positive demand -> discharge storage
+            # internal storage power is negative when discharging
+            if t == 0:
+                bat_P_ideal_t = -1 * min(demand_P, self.max_power, (self.soc_0-self.min_soc) / self.dt)
+            else:
+                bat_P_ideal_t = -1 * min(demand_P, self.max_power, (self.soc_E[t-1]-self.min_soc) / self.dt)
+
+            # actually requires more internal power due to efficiency losses
+            bat_P_real_t = bat_P_ideal_t - math.fabs(bat_P_ideal_t) * (1-self.efficiency)
+        elif demand_P < 0:  # negative demand -> charge storage
+            # internal storage power is positive when charging
+            if t == 0:
+                bat_P_ideal_t = min(-1*demand_P, self.max_power, (self.max_soc - self.soc_0) / self.dt)
+            else:
+                bat_P_ideal_t = min(-1*demand_P, self.max_power, (self.max_soc - self.soc_E[t-1]) / self.dt)
+
+            # less internal charging power due to efficiency losses
+            bat_P_real_t = bat_P_ideal_t - math.fabs(bat_P_ideal_t) * (1-self.efficiency)
+        else: # zero demand -> no storage operation
+            bat_P_ideal_t = 0
+            bat_P_real_t = 0
             
         # update the state of charge
-        self.soc_E[t] = 
-        
+        if t == 0:
+            self.soc_E[t] = self.soc_0 + bat_P_real_t * self.dt
+        else:
+            self.soc_E[t] = self.soc_E[t-1] + bat_P_real_t * self.dt
 
-        # and calculate net_power
+        # calcualate net demand
+        net_demand_P = demand_P + bat_P_ideal_t
+
+        # update storage power
+        self.storage_power[t] = bat_P_real_t
+
+        # apply soc degradation
+        if t==0:
+            self.soc_E[0] = self.soc_E[0] - ((self.soc_0 + self.soc_E[t])/2) * self.self_discharge
+        else:
+            self.soc_E[t] = self.soc_E[t] - ((self.soc_E[t-1] + self.soc_E[t])/2) * self.self_discharge
         
-        
-        return net_demand_P_t
+        return net_demand_P
 
 
 if __name__ == "__main__":
