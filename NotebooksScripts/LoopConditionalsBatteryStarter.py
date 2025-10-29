@@ -31,7 +31,7 @@ max_soc = 10  # Maximum state of charge (kWh)
 min_soc = 1   # Minimum state of charge (kWh)
 max_power = 15.0 # Maximum power the battery can handle (kW)
 efficiency = 0.98    # Base battery efficiency
-dt_degradation = 0.01    # Battery degradation factor
+self_discharge = 0.01    # Battery self-discharge rate per time step
 soc_0 = 5  # Initial state of charge (kWh)
 
 # Create the demand variable as a list (this represents energy demand over 10 periods)
@@ -52,7 +52,7 @@ for i in range(len(demand_P)):
         # Case (a): Positive demand means discharge the battery
         # Calculate battery power (discharge = negative internal battery power)
         discharge_P = min(demand_P[i], max_power)
-        avai_SOC = soc_E[i-1]*(1-dt_degradation) if i > 0 else soc_0 # Check if enough energy is available
+        avai_SOC = soc_E[i-1]*(1-self_discharge) if i > 0 else soc_0 # Check if enough energy is available
         possible_discharge = min(discharge_P * dt, (avai_SOC - min_soc))/efficiency
         
         bat_P[i] = -possible_discharge / dt  # discharge (negative power)
@@ -61,20 +61,20 @@ for i in range(len(demand_P)):
         # Case (b): Negative demand means charge the battery  
         # Calculate battery power (charging = positive internal power)
         charge_P = min(abs(demand_P[i]), max_power)
-        avai_SOC = soc_E[i-1]*(1-dt_degradation) if i > 0 else soc_0 # Check if enough energy is available
+        avai_SOC = soc_E[i-1]*(1-self_discharge) if i > 0 else soc_0 # Check if enough energy is available
         possible_charge = min(charge_P * dt, (max_soc - avai_SOC))*efficiency
         
         bat_P[i] = possible_charge / dt  # charge (positive power)
 
     else:
         # Case (c): Zero demand means no battery operation
-        bat_P[i] = 0  # No power change
+        bat_P[t] = 0  # No power change
 
 # Update state of charge (SoC) based on battery power and time step
     if i == 0:
-        soc_E[i] = soc_0*(1-dt_degradation) + bat_P[i] * dt
+        soc_E[i] = soc_0*(1-self_discharge) + bat_P[i] * dt
     else:
-        soc_E[i] = soc_E[i-1]*(1-dt_degradation) + bat_P[i] * dt
+        soc_E[i] = soc_E[i-1]*(1-self_discharge) + bat_P[i] * dt
 
     # Keep SoC within limits
     soc_E[i] = round(max(min_soc, min(max_soc, soc_E[i])),2)
